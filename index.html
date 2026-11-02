@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ECU · Estimación de temperatura NTC</title>
+  <meta name="description" content="Simulador interactivo de una ECU automotriz: sensor NTC, conversión analógico-digital, tabla de calibración e interpolación numérica.">
+  <meta name="theme-color" content="#05070a">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="#inicio"><span class="brand-dot" aria-hidden="true"></span>ECU<span class="brand-sep">·</span>NTC</a>
+  <nav class="steps" aria-label="Etapas del proceso">
+    <a href="#entrada"><b>01</b> Entrada</a>
+    <a href="#adc"><b>02</b> ADC</a>
+    <a href="#tabla"><b>03</b> Tabla</a>
+    <a href="#metodos"><b>04</b> Interpolación</a>
+    <a href="#raices"><b>05</b> Raíces</a>
+    <a href="#ecu"><b>06</b> ECU</a>
+  </nav>
+</header>
+
+<main id="inicio">
+
+  <!-- ============ TABLERO ============ -->
+  <section class="hero">
+    <p class="eyebrow" id="hero-curso">Métodos Numéricos</p>
+    <h1>Estimación de temperatura<br><span>para ECU automotriz</span></h1>
+    <p class="lead">Del termistor NTC al código ADC, de la tabla de calibración a la temperatura estimada. Cambia la lectura y mira cómo reacciona el tablero.</p>
+
+    <div class="cluster" id="cluster">
+      <figure class="gauge gauge-adc">
+        <div id="g-adc"></div>
+        <div class="readout"><b id="ro-adc">480</b><span>ADC</span></div>
+        <figcaption>Código ADC · ×100</figcaption>
+      </figure>
+
+      <figure class="gauge gauge-volt">
+        <div id="g-volt"></div>
+        <div class="telltales" id="telltales" aria-label="Luces testigo de la ECU"></div>
+        <div class="lcd" id="lcd" aria-live="polite">
+          <div><span class="k">ADC</span><span id="lcd-adc">480</span></div>
+          <div><span class="k">Vout</span><span id="lcd-v">2.344 V</span></div>
+          <div class="wide"><span class="k">BIN</span><span id="lcd-bin">0111100000</span></div>
+          <div><span class="k">T</span><span id="lcd-t">--.- °C</span></div>
+        </div>
+        <figcaption>Voltaje de salida del divisor · V<sub>out</sub></figcaption>
+      </figure>
+
+      <figure class="gauge gauge-temp">
+        <div id="g-temp"></div>
+        <div class="readout"><b id="ro-temp">--.-</b><span>°C</span></div>
+        <figcaption>Temperatura estimada</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============ 01 ENTRADA ============ -->
+  <section class="panel" id="entrada">
+    <header class="panel-head">
+      <span class="badge">01</span>
+      <div>
+        <h2>Entrada de datos</h2>
+        <p>Simulador del sensor y tabla de calibración (Look-Up Table).</p>
+      </div>
+    </header>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>Lectura del sensor</h3>
+        <div class="field-row two">
+          <div class="field">
+            <label for="in-adc">Código ADC (0–1023)</label>
+            <input id="in-adc" type="number" min="0" max="1023" step="1" inputmode="numeric" value="480">
+          </div>
+          <div class="field">
+            <label for="in-volt">Voltaje V<sub>out</sub> (0–5 V)</label>
+            <input id="in-volt" type="number" min="0" max="5" step="0.001" inputmode="decimal" value="2.344">
+          </div>
+        </div>
+        <input id="in-slider" type="range" min="0" max="1023" step="1" value="480" aria-label="Lectura del sensor, de 0 a 1023">
+        <div class="slider-scale" aria-hidden="true"><span id="sc-lo">0 V</span><span>2.5 V</span><span id="sc-hi">5 V</span></div>
+
+        <div class="actions">
+          <button id="btn-run" class="btn primary" type="button">▶ Convertir y buscar</button>
+          <button id="btn-example" class="btn ghost" type="button">Ejemplo (480)</button>
+          <button id="btn-random" class="btn ghost" type="button">Lectura aleatoria</button>
+        </div>
+        <p class="hint">El deslizador actualiza todo en tiempo real. <b>Convertir y buscar</b> reproduce la animación paso a paso.</p>
+      </div>
+
+      <div class="card">
+        <h3>Tabla de calibración</h3>
+        <div class="field">
+          <label for="sel-preset">Origen de la tabla</label>
+          <select id="sel-preset">
+            <option value="beta10">Ecuación Beta · cada 10 °C</option>
+            <option value="beta5">Ecuación Beta · cada 5 °C</option>
+            <option value="custom" disabled>Mis datos (sube un Excel)</option>
+          </select>
+          <p class="note" id="preset-note"></p>
+        </div>
+
+        <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Subir archivo Excel de calibración">
+          <input type="file" id="file-input" accept=".xlsx,.xls" hidden>
+          <strong>Arrastra tu archivo Excel aquí</strong>
+          <span>.xlsx · .xls &nbsp;|&nbsp; columna 1: ADC, columna 2: °C</span>
+        </div>
+
+        <div class="field-row cols">
+          <label for="sel-xunit">La columna 1 es</label>
+          <select id="sel-xunit" disabled>
+            <option value="adc">Código ADC</option>
+            <option value="volt">Voltaje (V)</option>
+          </select>
+          <button id="btn-swap" class="btn small ghost" type="button" disabled>⇄ Intercambiar columnas</button>
+        </div>
+
+        <div class="table-status" id="table-status" role="status"></div>
+        <div class="curve-mini" id="curve-mini" aria-label="Vista previa de la curva de calibración"></div>
+        <p class="hint"><a href="data/plantilla_calibracion.xlsx" download>Descargar plantilla Excel</a> (tabla de ejemplo con 15 nodos)</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 02 ADC ============ -->
+  <section class="panel" id="adc">
+    <header class="panel-head">
+      <span class="badge">02</span>
+      <div>
+        <h2>Conversión analógico → digital</h2>
+        <p>Aproximaciones sucesivas de 10 bits, como el ADC del Arduino UNO.</p>
+      </div>
+      <div class="head-tools">
+        <label for="sel-speed">Velocidad</label>
+        <select id="sel-speed">
+          <option value="650">Lenta</option>
+          <option value="350" selected>Normal</option>
+          <option value="140">Rápida</option>
+        </select>
+      </div>
+    </header>
+
+    <ol class="chain" aria-label="Cadena de señal">
+      <li>NTC 10 kΩ</li><li>Divisor (R fija 10 kΩ)</li><li>V<sub>out</sub> → pin A0</li><li>ADC 10 bits</li><li>Código N</li>
+    </ol>
+
+    <div class="adc-box">
+      <div class="adc-line"><span class="tag">Muestreo y retención</span> V<sub>in</sub> = <b id="adc-vin">2.344 V</b></div>
+
+      <div class="dacbar" aria-hidden="true">
+        <div class="track"><i class="m-dac" id="m-dac"></i><i class="m-vin" id="m-vin"></i></div>
+        <div class="scale"><span>0 V</span><span>V<sub>DAC</sub> de prueba ▮ &nbsp; V<sub>in</sub> ▏</span><span>5 V</span></div>
+      </div>
+
+      <div class="bits" id="bits" aria-label="Bits del resultado, del más al menos significativo"></div>
+      <p class="adc-log" id="adc-log" aria-live="polite"></p>
+
+      <div class="adc-result">
+        <div><span>Fórmula</span><b id="adc-formula">N = ⌊V<sub>in</sub> / 5 × 1024⌋</b></div>
+        <div><span>Código N</span><b id="adc-n">480</b></div>
+        <div><span>Binario</span><b id="adc-bin">0111100000</b></div>
+        <div><span>Hexadecimal</span><b id="adc-hex">0x1E0</b></div>
+        <div><span>Resolución (LSB)</span><b id="adc-lsb">4.883 mV</b></div>
+        <div><span>Error de cuantización</span><b id="adc-err">0.00 mV</b></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 03 TABLA ============ -->
+  <section class="panel" id="tabla">
+    <header class="panel-head">
+      <span class="badge">03</span>
+      <div>
+        <h2>Búsqueda en la tabla de calibración</h2>
+        <p>La ECU compara N con los nodos conocidos; si no hay coincidencia exacta, interpola.</p>
+      </div>
+    </header>
+
+    <div class="lookup-status" id="lookup-status" role="status"></div>
+    <div class="strip" id="lookup-strip" aria-hidden="true"></div>
+    <div class="table-wrap">
+      <table id="lookup-table">
+        <thead><tr><th>#</th><th>N (ADC)</th><th>V<sub>out</sub> (V)</th><th>T (°C)</th><th>Rol</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="hint">Las filas con barra ámbar son los 3 nodos más cercanos: los usarán Lagrange, Newton y el método matricial (polinomio de grado 2). Los splines cúbicos usarán toda la tabla.</p>
+  </section>
+
+  <!-- ============ 04–06 PRÓXIMAS FASES ============ -->
+  <section class="panel" id="metodos">
+    <header class="panel-head">
+      <span class="badge">04</span>
+      <div>
+        <h2>Interpolación numérica</h2>
+        <p>Lagrange · Diferencias divididas de Newton · Método matricial · Splines cúbicos naturales.</p>
+      </div>
+    </header>
+
+    <div class="method-bar">
+      <div class="field">
+        <label for="sel-degree">Polinomio (Lagrange, Newton, matricial)</label>
+        <select id="sel-degree">
+          <option value="2">Grado 2 · 3 nodos</option>
+          <option value="3">Grado 3 · 4 nodos</option>
+        </select>
+      </div>
+      <div class="seg" id="seg-methods" role="group" aria-label="Método a mostrar">
+        <button type="button" data-m="all" aria-pressed="true">Todos</button>
+        <button type="button" data-m="lagrange" aria-pressed="false">Lagrange</button>
+        <button type="button" data-m="newton" aria-pressed="false">Newton</button>
+        <button type="button" data-m="matricial" aria-pressed="false">Matricial</button>
+        <button type="button" data-m="spline" aria-pressed="false">Splines</button>
+      </div>
+    </div>
+
+    <div class="lookup-status" id="interp-status" role="status"></div>
+    <div id="method-cards" class="mcards"></div>
+    <div id="compare" class="compare"></div>
+    <p class="hint">La temperatura que mueve el medidor y la pantalla es la del método elegido; con <b>Todos</b> se usa el spline cúbico, que aprovecha toda la tabla.</p>
+  </section>
+
+  <section class="panel" id="raices">
+    <header class="panel-head">
+      <span class="badge">05</span>
+      <div>
+        <h2>Búsqueda de raíces</h2>
+        <p>Bisección · Newton-Raphson · Secante sobre la ecuación Beta del termistor.</p>
+      </div>
+    </header>
+
+    <div class="eq-box" id="root-eq"></div>
+
+    <div class="root-params">
+      <div class="field">
+        <label for="rt-tol">Tolerancia (°C)</label>
+        <select id="rt-tol">
+          <option value="0.01">10⁻²</option>
+          <option value="0.0001" selected>10⁻⁴</option>
+          <option value="0.000001">10⁻⁶</option>
+          <option value="0.00000001">10⁻⁸</option>
+        </select>
+      </div>
+      <div class="field"><label for="rt-a">Bisección · a (°C)</label><input id="rt-a" type="number" step="1" value="-40"></div>
+      <div class="field"><label for="rt-b">Bisección · b (°C)</label><input id="rt-b" type="number" step="1" value="150"></div>
+      <div class="field"><label for="rt-x0">Newton · x₀ (°C)</label><input id="rt-x0" type="number" step="1" value="25"></div>
+      <div class="field"><label for="rt-s0">Secante · x₀ (°C)</label><input id="rt-s0" type="number" step="1" value="0"></div>
+      <div class="field"><label for="rt-s1">Secante · x₁ (°C)</label><input id="rt-s1" type="number" step="1" value="50"></div>
+      <button id="btn-root-reset" class="btn small ghost" type="button">Restablecer</button>
+    </div>
+
+    <div class="seg" id="seg-roots" role="group" aria-label="Método de raíces a mostrar">
+      <button type="button" data-m="all" aria-pressed="true">Todos</button>
+      <button type="button" data-m="biseccion" aria-pressed="false">Bisección</button>
+      <button type="button" data-m="newton" aria-pressed="false">Newton-Raphson</button>
+      <button type="button" data-m="secante" aria-pressed="false">Secante</button>
+    </div>
+
+    <div class="lookup-status" id="root-status" role="status"></div>
+    <div id="root-cards" class="mcards"></div>
+    <div id="root-summary" class="compare"></div>
+  </section>
+
+  <section class="panel" id="ecu">
+    <header class="panel-head">
+      <span class="badge">06</span>
+      <div>
+        <h2>Respuesta de la ECU</h2>
+        <p>Acción sobre inyección, ventilador y ralentí según la temperatura estimada.</p>
+      </div>
+    </header>
+
+    <div class="ecu-grid" id="ecu-grid">
+      <div class="card">
+        <h3>Curva de calibración</h3>
+        <div id="ecu-chart" aria-label="Curva de calibración con la lectura actual"></div>
+        <div class="legend" id="ecu-legend">
+          <span><i style="border-color:#ffb020"></i>Spline cúbico (tabla)</span>
+          <span><i class="dash" style="border-color:#7d8da0"></i>Modelo Beta (referencia)</span>
+          <span><i class="dot" style="border-color:#ff3b30"></i>Lectura actual</span>
+        </div>
+        <p class="hint">Arrastra sobre la gráfica para cambiar la lectura: el punto, el tablero y la ECU responden al instante.</p>
+      </div>
+      <div class="card">
+        <h3>Estado de la ECU</h3>
+        <div id="ecu-state" class="ecu-state"></div>
+        <div class="tt-row" id="tt-lg" aria-label="Luces testigo"></div>
+        <table class="out-table" id="ecu-out"></table>
+      </div>
+    </div>
+    <p class="hint">Los umbrales de cada zona se editan en <code>js/config.js</code>. Son valores <b>típicos</b> de un motor convencional (cambian según el fabricante) y las salidas son ilustrativas, no una calibración real.</p>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <p id="foot-info"></p>
+</footer>
+
+<script src="js/vendor/xlsx.full.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/core.js"></script>
+<script src="js/methods.js"></script>
+<script src="js/roots.js"></script>
+<script src="js/gauges.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
